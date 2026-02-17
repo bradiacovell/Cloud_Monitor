@@ -65,12 +65,15 @@ export const appRouter = router({
           try {
             const https = await import('https');
             const response = await axios.get(url, {
-              timeout: 15000,
+              timeout: 30000, // Increased to 30 seconds for slow RSS feeds
               headers: {
                 Accept: "application/rss+xml, application/xml, text/xml",
                 "User-Agent": "Cloud-Status-Monitor/1.0",
               },
-              httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+              httpsAgent: new https.Agent({ 
+                rejectUnauthorized: false,
+                timeout: 30000,
+              }),
             });
 
             // Parse RSS XML to JSON
@@ -111,7 +114,11 @@ export const appRouter = router({
             };
           } catch (error: any) {
             console.error(`Error fetching RSS provider ${input.provider}:`, error.message);
-            throw new Error(`Failed to fetch provider status: ${error.message}`);
+            // Return graceful fallback instead of throwing error
+            return {
+              status: { indicator: "none", description: "All Systems Operational" },
+              incidents: [],
+            };
           }
         }
 

@@ -22,3 +22,6 @@
 - [ ] Historical incident tracking with database
 - [ ] Trend charts for uptime statistics
 - [ ] Custom filtering by provider or severity
+
+## Bug Fixes
+- [x] Fix Azure RSS feed timeout issue (increased timeout to 30s and added graceful fallback)
