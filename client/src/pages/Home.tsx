@@ -7,16 +7,18 @@ import { ProviderCard } from '@/components/ProviderCard';
 import { fetchAllProviders, generateRSSFeed } from '@/lib/api';
 import type { Provider } from '@/types/status';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
 
 export default function Home() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const trpcUtils = trpc.useUtils();
 
   const loadProviders = async (showToast = false) => {
     try {
       if (showToast) setRefreshing(true);
-      const data = await fetchAllProviders();
+      const data = await fetchAllProviders(trpcUtils);
       setProviders(data);
       if (showToast) {
         toast.success('Status updated successfully');

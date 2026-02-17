@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1771295852688,
+      "tag": "0000_parallel_purple_man",
+      "breakpoints": true
+    }
+  ]
+}

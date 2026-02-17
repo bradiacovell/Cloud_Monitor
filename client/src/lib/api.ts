@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { trpc } from '@/lib/trpc';
 import type { Provider, ProviderStatus, Incident } from '../types/status';
 
 const PROVIDERS_CONFIG = [
@@ -170,31 +170,26 @@ function parseSlackResponse(data: any): { status: ProviderStatus; incidents: Inc
   return { status, incidents };
 }
 
-async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0]): Promise<Provider> {
+async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0], trpcClient: ReturnType<typeof trpc.useUtils>): Promise<Provider> {
   try {
-    // Use backend proxy instead of direct API calls to avoid CORS issues
-    const response = await axios.get(`/api/status/${config.id}`, {
-      timeout: 15000,
-      headers: {
-        'Accept': 'application/json',
-      },
-    });
+    // Use tRPC backend proxy instead of direct API calls to avoid CORS issues
+    const response = await trpcClient.client.providerStatus.getStatus.query({ provider: config.id });
 
     let status: ProviderStatus = 'operational';
     let incidents: Incident[] = [];
 
     switch (config.type) {
       case 'statuspage':
-        ({ status, incidents } = parseStatusPageResponse(response.data));
+        ({ status, incidents } = parseStatusPageResponse(response));
         break;
       case 'google':
-        ({ status, incidents } = parseGoogleResponse(response.data));
+        ({ status, incidents } = parseGoogleResponse(response));
         break;
       case 'salesforce':
-        ({ status, incidents } = parseSalesforceResponse(response.data));
+        ({ status, incidents } = parseSalesforceResponse(response));
         break;
       case 'slack':
-        ({ status, incidents } = parseSlackResponse(response.data));
+        ({ status, incidents } = parseSlackResponse(response));
         break;
     }
 
@@ -216,9 +211,9 @@ async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0]): Promise<
   }
 }
 
-export async function fetchAllProviders(): Promise<Provider[]> {
+export async function fetchAllProviders(trpcClient: ReturnType<typeof trpc.useUtils>): Promise<Provider[]> {
   const results = await Promise.allSettled(
-    PROVIDERS_CONFIG.map(config => fetchProviderStatus(config))
+    PROVIDERS_CONFIG.map(config => fetchProviderStatus(config, trpcClient))
   );
 
   return results.map((result, index) => {
