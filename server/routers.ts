@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import axios from "axios";
 import { z } from "zod";
+import { parseStringPromise } from "xml2js";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -24,7 +25,7 @@ export const appRouter = router({
     getStatus: publicProcedure
       .input(z.object({ provider: z.string() }))
       .query(async ({ input }) => {
-        const providers: Record<string, string> = {
+        const jsonProviders: Record<string, string> = {
           gcp: "https://status.cloud.google.com/incidents.json",
           "google-workspace": "https://www.google.com/appsstatus/dashboard/incidents.json",
           cloudflare: "https://www.cloudflarestatus.com/api/v2/summary.json",
@@ -33,29 +34,88 @@ export const appRouter = router({
           salesforce: "https://api.status.salesforce.com/v1/incidents/active",
           slack: "https://slack-status.com/api/v2.0.0/current",
           atlassian: "https://status.atlassian.com/api/v2/summary.json",
-          aws: "https://status.aws.amazon.com/api/v2/summary.json",
-          azure: "https://azure.status.microsoft/en-us/status/api/v2/summary.json",
         };
 
-        const url = providers[input.provider];
-        if (!url) {
-          throw new Error(`Provider not found: ${input.provider}`);
+        const rssProviders: Record<string, string> = {
+          azure: "https://rssfeed.azure.status.microsoft/en-us/status/feed/",
+          aws: "https://status.aws.amazon.com/rss/all.rss",
+        };
+
+        // Check if it's a JSON provider
+        if (jsonProviders[input.provider]) {
+          const url = jsonProviders[input.provider];
+          try {
+            const response = await axios.get(url, {
+              timeout: 15000,
+              headers: {
+                Accept: "application/json",
+                "User-Agent": "Cloud-Status-Monitor/1.0",
+              },
+            });
+            return response.data;
+          } catch (error: any) {
+            console.error(`Error fetching provider ${input.provider}:`, error.message);
+            throw new Error(`Failed to fetch provider status: ${error.message}`);
+          }
         }
 
-        try {
-          const response = await axios.get(url, {
-            timeout: 15000,
-            headers: {
-              Accept: "application/json",
-              "User-Agent": "Cloud-Status-Monitor/1.0",
-            },
-          });
+        // Check if it's an RSS provider
+        if (rssProviders[input.provider]) {
+          const url = rssProviders[input.provider];
+          try {
+            const https = await import('https');
+            const response = await axios.get(url, {
+              timeout: 15000,
+              headers: {
+                Accept: "application/rss+xml, application/xml, text/xml",
+                "User-Agent": "Cloud-Status-Monitor/1.0",
+              },
+              httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            });
 
-          return response.data;
-        } catch (error: any) {
-          console.error(`Error fetching provider ${input.provider}:`, error.message);
-          throw new Error(`Failed to fetch provider status: ${error.message}`);
+            // Parse RSS XML to JSON
+            const parsed = await parseStringPromise(response.data);
+            const channel = parsed.rss?.channel?.[0];
+            
+            if (!channel) {
+              return {
+                status: { indicator: "none", description: "All Systems Operational" },
+                incidents: [],
+              };
+            }
+
+            const items = channel.item || [];
+            const incidents = items.map((item: any) => ({
+              id: item.guid?.[0]?._ || item.guid?.[0] || Math.random().toString(),
+              name: item.title?.[0] || "Unknown Incident",
+              status: "investigating",
+              created_at: item.pubDate?.[0] || new Date().toISOString(),
+              updated_at: item.pubDate?.[0] || new Date().toISOString(),
+              impact: "minor",
+              shortlink: item.link?.[0] || "",
+              incident_updates: [
+                {
+                  body: item.description?.[0] || "No description available",
+                  created_at: item.pubDate?.[0] || new Date().toISOString(),
+                  status: "investigating",
+                },
+              ],
+            }));
+
+            return {
+              status: {
+                indicator: incidents.length > 0 ? "minor" : "none",
+                description: incidents.length > 0 ? "Service Issues" : "All Systems Operational",
+              },
+              incidents,
+            };
+          } catch (error: any) {
+            console.error(`Error fetching RSS provider ${input.provider}:`, error.message);
+            throw new Error(`Failed to fetch provider status: ${error.message}`);
+          }
         }
+
+        throw new Error(`Provider not found: ${input.provider}`);
       }),
   }),
 });
