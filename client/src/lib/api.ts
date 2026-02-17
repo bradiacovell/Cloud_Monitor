@@ -71,16 +71,16 @@ const PROVIDERS_CONFIG = [
     name: 'Amazon Web Services',
     description: 'EC2, S3, Lambda, RDS',
     url: 'https://health.aws.amazon.com/',
-    apiUrl: 'https://status.aws.amazon.com/rss/all.rss',
-    type: 'rss' as const,
+    apiUrl: 'https://status.aws.amazon.com/api/v2/summary.json',
+    type: 'statuspage' as const,
   },
   {
     id: 'azure',
     name: 'Microsoft Azure',
     description: 'Compute, Storage, AI',
     url: 'https://azure.status.microsoft/en-us/status',
-    apiUrl: 'https://rssfeed.azure.status.microsoft/en-us/status/feed/',
-    type: 'rss' as const,
+    apiUrl: 'https://azure.status.microsoft/en-us/status/api/v2/summary.json',
+    type: 'statuspage' as const,
   },
 ];
 
@@ -172,8 +172,9 @@ function parseSlackResponse(data: any): { status: ProviderStatus; incidents: Inc
 
 async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0]): Promise<Provider> {
   try {
-    const response = await axios.get(config.apiUrl, {
-      timeout: 10000,
+    // Use backend proxy instead of direct API calls to avoid CORS issues
+    const response = await axios.get(`/api/status/${config.id}`, {
+      timeout: 15000,
       headers: {
         'Accept': 'application/json',
       },
@@ -195,11 +196,6 @@ async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0]): Promise<
       case 'slack':
         ({ status, incidents } = parseSlackResponse(response.data));
         break;
-      case 'rss':
-        // RSS feeds would need server-side parsing
-        status = 'operational';
-        incidents = [];
-        break;
     }
 
     return {
@@ -208,8 +204,9 @@ async function fetchProviderStatus(config: typeof PROVIDERS_CONFIG[0]): Promise<
       incidents,
       lastUpdated: new Date().toISOString(),
     };
-  } catch (error) {
-    console.error(`Error fetching ${config.name}:`, error);
+  } catch (error: any) {
+    const errorMsg = error?.response?.data?.error || error?.message || 'Unknown error';
+    console.error(`Error fetching ${config.name}: ${errorMsg}`, error);
     return {
       ...config,
       status: 'unknown',
